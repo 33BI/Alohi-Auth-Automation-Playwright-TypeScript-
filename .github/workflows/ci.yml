@@ -1,0 +1,92 @@
+name: e2e
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SIGN_URL: https://app.sign.plus/
+      FAX_URL:  https://app.fax.plus/
+      DIAL_URL: https://app.dial.plus/
+      LOCKOUT_N: '5'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Install Playwright (browsers + Linux deps)
+        run: npx playwright install --with-deps
+
+      - name: Generate OIDC authorize URL (PKCE)
+        run: |
+          node - <<'NODE'
+          const crypto = require('crypto');
+          const fs = require('fs');
+
+          const b64url = b =>
+            b.toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+
+          const verifier  = b64url(crypto.randomBytes(32));
+          const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+
+          const redirect  = encodeURIComponent('https://id.alohi.com/realms/alohi/app-selector');
+          const url = `https://id.alohi.com/realms/alohi/protocol/openid-connect/auth` +
+                      `?client_id=app-selector` +
+                      `&redirect_uri=${redirect}` +
+                      `&response_type=code` +
+                      `&code_challenge=${challenge}` +
+                      `&code_challenge_method=S256`;
+
+          fs.appendFileSync(process.env.GITHUB_ENV, `ID_LOGIN_URL=${url}\n`);
+          // If your app later needs to redeem the code, you’d also pass CODE_VERIFIER.
+          fs.appendFileSync(process.env.GITHUB_ENV, `CODE_VERIFIER=${verifier}\n`);
+          NODE
+
+      - name: Run Playwright tests
+        run: |
+          if [ -n "${GREP:-}" ]; then
+            echo "Running with grep: $GREP"
+            npx playwright test --grep "$GREP"
+          else
+            npx playwright test
+          fi
+        env:
+          AUTH_EMAIL: ${{ secrets.AUTH_EMAIL }}
+          AUTH_PASS:  ${{ secrets.AUTH_PASS }}
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
+
+      - name: Upload traces & videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results
+          retention-days: 7
