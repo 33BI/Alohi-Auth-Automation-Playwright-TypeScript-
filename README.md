@@ -2,8 +2,6 @@
 
 **Goal:** Unified, security-focused authentication testing across Alohi products (Sign.Plus, Fax.Plus, Dial.Plus). This repo contains Playwright E2E tests for login, reset, session, SSO/logout, cookie/security headers, plus a concise manual QA strategy and test scenarios.
 
-**Live app (landing page):** [https://alohi-auth-shield.lovable.app/](https://alohi-auth-shield.lovable.app/)
-
 ---
 
 ## 📋 Contents
